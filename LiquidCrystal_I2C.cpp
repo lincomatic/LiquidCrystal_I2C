@@ -22,73 +22,76 @@
 // can't assume that its in that state when a sketch starts (and the
 // LiquidCrystal constructor is called).
 
-LiquidCrystal_I2C::LiquidCrystal_I2C(uint8_t lcd_addr, uint8_t lcd_cols, uint8_t lcd_rows, uint8_t charsize)
+LiquidCrystal_I2C::LiquidCrystal_I2C(uint8_t lcd_addr)
 {
 	_addr = lcd_addr;
-	_cols = lcd_cols;
-	_rows = lcd_rows;
-	_charsize = charsize;
 	_backlightval = LCD_BACKLIGHT;
 }
 
-void LiquidCrystal_I2C::begin() {
-	Wire.begin();
-	_displayfunction = LCD_4BITMODE | LCD_1LINE | LCD_5x8DOTS;
+int LiquidCrystal_I2C::begin(uint8_t lcd_cols, uint8_t lcd_rows, uint8_t charsize)
+{
+  _cols = lcd_cols;
+  _rows = lcd_rows;
+  _charsize = charsize;
+  Wire.begin();
+  _displayfunction = LCD_4BITMODE | LCD_1LINE | LCD_5x8DOTS;
+  
+  if (_rows > 1) {
+    _displayfunction |= LCD_2LINE;
+  }
+  
+  // for some 1 line displays you can select a 10 pixel high font
+  if ((_charsize != 0) && (_rows == 1)) {
+    _displayfunction |= LCD_5x10DOTS;
+  }
+  
+  // SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
+  // according to datasheet, we need at least 40ms after power rises above 2.7V
+  // before sending commands. Arduino can turn on way befer 4.5V so we'll wait 50
+  delay(50);
+  
+  // Now we pull both RS and R/W low to begin commands
+  _expanderWrite(_backlightval);	// reset expanderand turn backlight off (Bit 8 =1)
+  delay(1000);
+  
+  //put the LCD into 4 bit mode
+  // this is according to the hitachi HD44780 datasheet
+  // figure 24, pg 46
+  
+  // we start in 8bit mode, try to set 4 bit mode
+  _write4bits(0x03 << 4);
+  delayMicroseconds(4500); // wait min 4.1ms
+  
+  // second try
+  _write4bits(0x03 << 4);
+  delayMicroseconds(4500); // wait min 4.1ms
+  
+  // third go!
+  _write4bits(0x03 << 4);
+  delayMicroseconds(150);
+  
+  // finally, set to 4-bit interface
+  _write4bits(0x02 << 4);
+  
+  // set # lines, font size, etc.
+  command(LCD_FUNCTIONSET | _displayfunction);
+  
+  // turn the display on with no cursor or blinking default
+  _displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF;
+  display();
+  
+  // clear it off
+  clear();
+  
+  // Initialize to default text direction (for roman languages)
+  _displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT;
+  
+  // set the entry mode
+  command(LCD_ENTRYMODESET | _displaymode);
+  
+  home();
 
-	if (_rows > 1) {
-		_displayfunction |= LCD_2LINE;
-	}
-
-	// for some 1 line displays you can select a 10 pixel high font
-	if ((_charsize != 0) && (_rows == 1)) {
-		_displayfunction |= LCD_5x10DOTS;
-	}
-
-	// SEE PAGE 45/46 FOR INITIALIZATION SPECIFICATION!
-	// according to datasheet, we need at least 40ms after power rises above 2.7V
-	// before sending commands. Arduino can turn on way befer 4.5V so we'll wait 50
-	delay(50);
-
-	// Now we pull both RS and R/W low to begin commands
-	expanderWrite(_backlightval);	// reset expanderand turn backlight off (Bit 8 =1)
-	delay(1000);
-
-	//put the LCD into 4 bit mode
-	// this is according to the hitachi HD44780 datasheet
-	// figure 24, pg 46
-
-	// we start in 8bit mode, try to set 4 bit mode
-	write4bits(0x03 << 4);
-	delayMicroseconds(4500); // wait min 4.1ms
-
-	// second try
-	write4bits(0x03 << 4);
-	delayMicroseconds(4500); // wait min 4.1ms
-
-	// third go!
-	write4bits(0x03 << 4);
-	delayMicroseconds(150);
-
-	// finally, set to 4-bit interface
-	write4bits(0x02 << 4);
-
-	// set # lines, font size, etc.
-	command(LCD_FUNCTIONSET | _displayfunction);
-
-	// turn the display on with no cursor or blinking default
-	_displaycontrol = LCD_DISPLAYON | LCD_CURSOROFF | LCD_BLINKOFF;
-	display();
-
-	// clear it off
-	clear();
-
-	// Initialize to default text direction (for roman languages)
-	_displaymode = LCD_ENTRYLEFT | LCD_ENTRYSHIFTDECREMENT;
-
-	// set the entry mode
-	command(LCD_ENTRYMODESET | _displaymode);
-
-	home();
+  return 0;
 }
 
 /********** high level commands, for the user! */
@@ -185,12 +188,12 @@ void LiquidCrystal_I2C::createChar(uint8_t location, uint8_t charmap[]) {
 // Turn the (optional) backlight off/on
 void LiquidCrystal_I2C::noBacklight(void) {
 	_backlightval=LCD_NOBACKLIGHT;
-	expanderWrite(0);
+	_expanderWrite(0);
 }
 
 void LiquidCrystal_I2C::backlight(void) {
 	_backlightval=LCD_BACKLIGHT;
-	expanderWrite(0);
+	_expanderWrite(0);
 }
 bool LiquidCrystal_I2C::getBacklight() {
   return _backlightval == LCD_BACKLIGHT;
@@ -200,11 +203,11 @@ bool LiquidCrystal_I2C::getBacklight() {
 /*********** mid level commands, for sending data/cmds */
 
 inline void LiquidCrystal_I2C::command(uint8_t value) {
-	send(value, 0);
+	_send(value, 0);
 }
 
 inline size_t LiquidCrystal_I2C::write(uint8_t value) {
-	send(value, Rs);
+	_send(value, Rs);
 	return 1;
 }
 
@@ -212,29 +215,29 @@ inline size_t LiquidCrystal_I2C::write(uint8_t value) {
 /************ low level data pushing commands **********/
 
 // write either command or data
-void LiquidCrystal_I2C::send(uint8_t value, uint8_t mode) {
+void LiquidCrystal_I2C::_send(uint8_t value, uint8_t mode) {
 	uint8_t highnib=value&0xf0;
 	uint8_t lownib=(value<<4)&0xf0;
-	write4bits((highnib)|mode);
-	write4bits((lownib)|mode);
+	_write4bits((highnib)|mode);
+	_write4bits((lownib)|mode);
 }
 
-void LiquidCrystal_I2C::write4bits(uint8_t value) {
-	expanderWrite(value);
-	pulseEnable(value);
+void LiquidCrystal_I2C::_write4bits(uint8_t value) {
+	_expanderWrite(value);
+	_pulseEnable(value);
 }
 
-void LiquidCrystal_I2C::expanderWrite(uint8_t _data){
+void LiquidCrystal_I2C::_expanderWrite(uint8_t _data){
 	Wire.beginTransmission(_addr);
 	Wire.write((int)(_data) | _backlightval);
 	Wire.endTransmission();
 }
 
-void LiquidCrystal_I2C::pulseEnable(uint8_t _data){
-	expanderWrite(_data | En);	// En high
+void LiquidCrystal_I2C::_pulseEnable(uint8_t _data){
+	_expanderWrite(_data | En);	// En high
 	delayMicroseconds(1);		// enable pulse must be >450ns
 
-	expanderWrite(_data & ~En);	// En low
+	_expanderWrite(_data & ~En);	// En low
 	delayMicroseconds(50);		// commands need > 37us to settle
 }
 
