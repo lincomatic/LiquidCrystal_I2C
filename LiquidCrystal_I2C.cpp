@@ -223,7 +223,6 @@ void LiquidCrystal_I2C::_send(uint8_t value, uint8_t mode) {
 }
 
 void LiquidCrystal_I2C::_write4bits(uint8_t value) {
-	_expanderWrite(value);
 	_pulseEnable(value);
 }
 
