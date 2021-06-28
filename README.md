@@ -20,3 +20,6 @@ This library is based on work done by DFROBOT (www.dfrobot.com).
 - removed extraneous virtual from write()
 - preface all private methods w/ '_'
 - move x,y,dots from constructor to begin()
+
+20210628 SCL
+- remove superfluous call to _expanderWrite() in _write4bits()
